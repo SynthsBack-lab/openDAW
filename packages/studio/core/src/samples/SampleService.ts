@@ -33,7 +33,7 @@ export class SampleService extends AssetService<Sample, AudioData> {
             numberOfChannels: audioData.numberOfChannels,
             sampleRate: audioData.sampleRate
         })
-        return this.importFile({name, bpm, arrayBuffer, origin: "recording"})
+        return this.importFile({uuid: UUID.generate(), name, bpm, arrayBuffer, origin: "recording"})
     }
 
     async importFile({uuid, name, bpm, arrayBuffer, progressHandler = Progress.Empty, origin = "import"}

@@ -53,7 +53,7 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
                 this.#output.push(array)
                 this.#peakWriter.append(array)
                 if (this.numberOfFrames >= this.#limitSamples) {
-                    this.#finalize().catch(error => console.warn(error))
+                    void this.#finalize()
                 }
             }
         })
@@ -64,7 +64,7 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
     limit(count: int): void {
         this.#limitSamples = count
         if (this.numberOfFrames >= this.#limitSamples) {
-            this.#finalize().catch(error => console.warn(error))
+            void this.#finalize()
         }
     }
 
