@@ -30,7 +30,7 @@ import type {SoundFont2} from "soundfont2"
 import {HRClock} from "../../core-processors/src/HRClock"
 import {PeakBroadcaster} from "../../core-processors/src/PeakBroadcaster"
 import {GonioCapture, LoudnessMeter, StereoAnalyser} from "./analysis-dsp"
-import {EngineExports} from "./engine-exports"
+import {EngineExports, takeReportMessage} from "./engine-exports"
 import {WasmMidiDrain} from "./midi-drain"
 import {RecordingStartEdge} from "./recording-start-edge"
 import {describeEngineTrap, drainResourceRequests, instantiateWasmEngine} from "./boot"
@@ -346,6 +346,7 @@ class WasmEngineProcessor extends AudioWorkletProcessor {
         }
         engine.render()
         this.#announceRecordingStart(engine)
+        takeReportMessage(engine, this.#memory).ifSome(message => this.#engineToClient.error(new Error(`engine: ${message}`)))
         if (monitoring.length > 0 && monitorOutput !== undefined) {
             const outputPtr = engine.monitor_output_ptr()
             const staged = new Float32Array(this.#memory.buffer, outputPtr, 8 * RenderQuantum)
