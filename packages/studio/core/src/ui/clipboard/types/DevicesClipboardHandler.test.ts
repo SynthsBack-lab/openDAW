@@ -10,6 +10,7 @@ import {
     MIDIOutputBox,
     MIDIOutputDeviceBox,
     ModulationBox,
+    NoteEventBox,
     NoteEventCollectionBox,
     NoteRegionBox,
     PlayfieldDeviceBox,
@@ -25,7 +26,7 @@ import {
     WerkstattSampleBox
 } from "@opendaw/studio-boxes"
 import {AudioUnitType, Pointers} from "@opendaw/studio-enums"
-import {DeviceBoxUtils, isModulatorBox, ProjectSkeleton, TrackType, UnionBoxTypes} from "@opendaw/studio-adapters"
+import {DeviceBoxUtils, isModulatorBox, ProjectSkeleton, TrackType} from "@opendaw/studio-adapters"
 import {AudioEffectCompositeBox, AudioEffectCompositeCellBox, StereoToolDeviceBox, UserInterfaceBox} from "@opendaw/studio-boxes"
 import {ClipboardUtils} from "../ClipboardUtils"
 import {DevicesClipboard} from "./DevicesClipboardHandler"
@@ -324,14 +325,8 @@ describe("DevicesClipboardHandler", () => {
             if (replaceInstrument) {return false}
             if (DeviceBoxUtils.isInstrumentDeviceBox(box)) {return true}
             // Mirrors DevicesClipboardHandler paste: when an instrument is bundled but not replaced, drop the
-            // whole timeline subtree so a region can't dangle its mandatory `regions` pointer (#1049-#1051).
-            if (hasInstrument
-                && (isInstanceOf(box, TrackBox)
-                    || UnionBoxTypes.isRegionBox(box)
-                    || UnionBoxTypes.isClipBox(box)
-                    || isInstanceOf(box, NoteEventCollectionBox)
-                    || isInstanceOf(box, ValueEventCollectionBox))) {return true}
-            return false
+            // whole timeline subtree so nothing dangles its mandatory pointer (#1049-#1051, #1128).
+            return hasInstrument && DevicesClipboard.isTimelineContent(box)
         }
     })
 
@@ -603,6 +598,36 @@ describe("DevicesClipboardHandler", () => {
                 .filter(pointer => isInstanceOf(pointer.box, TrackBox))
             expect(pastedTracks.length).toBe(0)
             expect(target.boxGraph.boxes().some(box => isInstanceOf(box, NoteRegionBox))).toBe(false)
+        })
+        // #1128: the #1049 exclusion dropped the collections but not the NoteEventBoxes inside them, whose
+        // mandatory `events` pointer then dangled ("Pointer (events) requires an edge").
+        it("drops the bundled note events with their collection when not replacing (#1128)", () => {
+            const sourceAU = createAudioUnit(source)
+            const vapo = addVaporisateur(source, sourceAU, "Source Vapo")
+            const noteTrack = addTrack(source, sourceAU, TrackType.Notes, 0)
+            const region = addNoteRegion(source, noteTrack, 0, 1920)
+            source.boxGraph.beginTransaction()
+            const collection = region.events.targetVertex.unwrap("events").box as NoteEventCollectionBox
+            NoteEventBox.create(source.boxGraph, UUID.generate(), box => {
+                box.position.setValue(0)
+                box.duration.setValue(480)
+                box.pitch.setValue(60)
+                box.events.refer(collection.events)
+            })
+            source.boxGraph.endTransaction()
+            const deps = collectDeviceDependencies(vapo, source.boxGraph, sourceAU)
+            expect(deps.some(box => isInstanceOf(box, NoteEventBox))).toBe(true)
+            const data = ClipboardUtils.serializeBoxes([vapo, ...deps])
+            const targetAU = createAudioUnit(target)
+            const editing = new BoxEditing(target.boxGraph)
+            expect(() => {
+                editing.modify(() => {
+                    ClipboardUtils.deserializeBoxes(data, target.boxGraph,
+                        makePasteMapper(targetAU, false, true))
+                })
+            }).not.toThrow()
+            expect(target.boxGraph.boxes().some(box => isInstanceOf(box, NoteEventBox))).toBe(false)
+            expect(target.boxGraph.boxes().some(box => isInstanceOf(box, NoteEventCollectionBox))).toBe(false)
         })
     })
 
