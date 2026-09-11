@@ -24,7 +24,7 @@ import {
 } from "@opendaw/studio-adapters"
 import {RenderQuantum} from "./RenderQuantum"
 import {PeaksWriter} from "./PeaksWriter"
-import {SampleService} from "./samples"
+import {SampleService, SampleStorage} from "./samples"
 
 // the ring delivers whole chunks, so the capture overshoots the limit: keep the head, drop the tail
 export const recordedFrames = (chunks: ReadonlyArray<ReadonlyArray<Float32Array>>,
@@ -43,6 +43,7 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
 
     #data: Option<AudioData> = Option.None
     #peaks: Option<Peaks> = Option.None
+    #meta: Option<SampleMetaData> = Option.None
     #firstQuantumTime: Option<number> = Option.None
     #isRecording: boolean = true
     #limitSamples: int = Number.POSITIVE_INFINITY
@@ -97,9 +98,7 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
 
     get numberOfFrames(): int {return this.#output.length * RenderQuantum}
     get firstQuantumTime(): Option<number> {return this.#firstQuantumTime}
-    // A take in progress is not a stored sample yet, so it has no metadata to report. It acquires some when
-    // `#save` hands it to `SampleService.importRecording`, and from then on a `DefaultSampleLoader` serves it.
-    get meta(): Option<SampleMetaData> {return Option.None}
+    get meta(): Option<SampleMetaData> {return this.#meta}
     get data(): Option<AudioData> {return this.#data}
     get peaks(): Option<Peaks> {return this.#peaks.isEmpty() ? Option.wrap(this.#peakWriter) : this.#peaks}
     get state(): SampleLoaderState {return this.#state}
@@ -131,9 +130,12 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
         const audioData = AudioData.create(this.context.sampleRate, totalSamples, this.channelCount)
         mergedFrames.forEach((frame, index) => audioData.frames[index].set(frame))
         this.#data = Option.wrap(audioData)
-        await this.#sampleService
+        const sample = await this.#sampleService
             .unwrap("SampleService not set")
             .importRecording(this.uuid, audioData, this.#bpm.unwrapOrElse(120))
+        this.#peaks = Option.wrap(await SampleStorage.get().loadPeaks(this.uuid, audioData))
+        this.#meta = Option.wrap(sample)
+        this.#output.length = 0
         this.#onSaved.ifSome(callback => callback())
         this.#setState({type: "loaded"})
         this.terminate()
