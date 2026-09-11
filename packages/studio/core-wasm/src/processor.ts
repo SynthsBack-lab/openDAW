@@ -385,12 +385,7 @@ class WasmEngineProcessor extends AudioWorkletProcessor {
         this.#midi.drain(engine, this.#memory)
     }
 
-    // One-shot per recording, on the rising edge of the transport's recording flag as rendered this quantum
-    // (the stop command paths reset the edge, since the state buffer only changes in `render`).
-    // `currentTime` is the START of the quantum in an AudioWorkletGlobalScope, while the position in the
-    // state buffer is the one reached after rendering it: report the quantum END so both describe the same
-    // instant. Read straight from the engine state, not the sync packet, whose populate callback only runs
-    // when the main thread has consumed the previous packet.
+    // currentTime is the quantum start, the state position is post-render: report the quantum end
     #announceRecordingStart(engine: EngineExports): void {
         const view = new DataView(this.#memory.buffer, engine.engine_state_ptr(), engine.engine_state_len())
         if (this.#recordingStartEdge.observe(view.getUint8(18) === 1)) {

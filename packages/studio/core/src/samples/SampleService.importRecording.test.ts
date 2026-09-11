@@ -5,9 +5,10 @@ import {BpmDetector, Sample} from "@opendaw/studio-adapters"
 import {AssetService} from "../AssetService"
 import {SampleService} from "./SampleService"
 
-// fixes #375: importRecording derived the AudioFileBox uuid from the WAV bytes (content addressing).
+// fixes #375: importRecording derived the sample uuid from the WAV bytes (content addressing).
 // Two takes with byte-identical audio (two mics on one signal, or silence recorded twice) then
 // collided on the same uuid and the second AudioFileBox.create panicked "already staged".
+// The uuid is now the recording's own, assigned by the capture before the first frame.
 
 class CapturingSampleService extends SampleService {
     readonly imports: Array<AssetService.ImportArgs> = []
@@ -24,12 +25,15 @@ class CapturingSampleService extends SampleService {
 const createSilence = () => AudioData.create(48000, 4800, 1)
 
 describe("SampleService.importRecording", () => {
-    it("assigns every take its own uuid, even for byte-identical audio", async () => {
+    it("stores every take under its own uuid, even for byte-identical audio", async () => {
         const service = new CapturingSampleService()
-        const first = await service.importRecording(createSilence(), 120)
-        const second = await service.importRecording(createSilence(), 120)
+        const firstUuid = UUID.generate()
+        const secondUuid = UUID.generate()
+        const first = await service.importRecording(firstUuid, createSilence(), 120)
+        const second = await service.importRecording(secondUuid, createSilence(), 120)
         expect(service.imports).toHaveLength(2)
         service.imports.forEach(args => expect(isDefined(args.uuid)).toBe(true))
-        expect(first.uuid).not.toBe(second.uuid)
+        expect(first.uuid).toBe(UUID.toString(firstUuid))
+        expect(second.uuid).toBe(UUID.toString(secondUuid))
     })
 })

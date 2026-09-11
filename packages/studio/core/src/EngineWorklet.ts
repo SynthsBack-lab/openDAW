@@ -267,7 +267,7 @@ export class EngineWorklet extends AudioWorkletNode implements Engine {
     setPosition(position: ppqn): void {this.#commands.setPosition(position)}
     prepareRecordingState(countIn: boolean): void {
         this.#recordingGeneration++
-        this.#recordingStart.clear() // the engine reports the new start once the transport flips
+        this.#recordingStart.clear()
         this.#commands.prepareRecordingState(countIn, this.#recordingGeneration)
     }
     stopRecording(): void {this.#commands.stopRecording()}

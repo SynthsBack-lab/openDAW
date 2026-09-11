@@ -7,7 +7,8 @@ import {
     Option,
     RuntimeNotifier,
     Terminable,
-    tryCatch
+    tryCatch,
+    UUID
 } from "@opendaw/lib-std"
 import {dbToGain} from "@opendaw/lib-dsp"
 import {Promises} from "@opendaw/lib-runtime"
@@ -178,8 +179,7 @@ export class CaptureAudio extends Capture<CaptureAudioBox> {
     async prepareRecording(): Promise<void> {
         const {project} = this.manager
         const {env: {audioContext, audioWorklets, sampleManager, sampleService}} = project
-        // A worklet still prepared here was never consumed by `startRecording`, so nothing will ever
-        // terminate it: it stays connected to the record gain and its reader keeps appending chunks.
+        // a prepared worklet that startRecording never consumed stays connected and buffering forever
         this.#discardPreparedWorklet()
         if (isUndefined(audioContext.outputLatency)) {
             const approved = await RuntimeNotifier.approve({
@@ -192,9 +192,6 @@ export class CaptureAudio extends Capture<CaptureAudioBox> {
                 return Promise.reject("Recording cancelled")
             }
         }
-        // The take is placed from reports the audio thread sends while rendering: a context that is
-        // not running sends none, and the transport would count in over a capture that records
-        // nothing. Rejecting here aborts the whole recording session before the transport starts.
         await AudioContexts.resume(audioContext)
         if (audioContext.state !== "running") {
             return Promise.reject(`Cannot record while the audio context is '${audioContext.state}'.`)
@@ -205,7 +202,7 @@ export class CaptureAudio extends Capture<CaptureAudioBox> {
             return Promise.reject("No audio chain available for recording.")
         }
         const {recordGainNode, channelCount} = audioChain
-        const recordingWorklet = audioWorklets.createRecording(channelCount, RecordingRingChunks)
+        const recordingWorklet = audioWorklets.createRecording(UUID.generate(), channelCount, RecordingRingChunks)
         recordingWorklet.bpm = project.timelineBox.bpm.getValue()
         recordingWorklet.sampleService = sampleService
         sampleManager.record(recordingWorklet)
@@ -227,8 +224,6 @@ export class CaptureAudio extends Capture<CaptureAudioBox> {
         const {recordGainNode} = audioChain
         const track = this.#stream.unwrapOrNull()?.getAudioTracks().at(0)
         const trackSettings = track?.getSettings()
-        // Both terms are read on demand: the input latency can be configured to equal the output
-        // latency, which is only known once output has started, so resolving it needs the same read.
         const readLatency = (): RecordAudio.Latency => {
             const outputLatency = audioContext.outputLatency ?? 0
             return {
@@ -321,14 +316,10 @@ export class CaptureAudio extends Capture<CaptureAudioBox> {
         this.#connectMonitoring()
     }
 
-    // The teardown `RecordAudio`'s terminator performs when it aborts a recording, for a worklet that
-    // never reached `RecordAudio` at all. Without it the node stays connected to the record gain and
-    // its ring reader appends every delivered chunk to an unbounded buffer for the life of the page.
     #discardPreparedWorklet(): void {
         const recordingWorklet = this.#preparedWorklet
         if (!isDefined(recordingWorklet)) {return}
         this.#preparedWorklet = null
-        // The chain may already be gone or rebuilt, in which case the node is no longer connected.
         tryCatch(() => this.#audioChain?.recordGainNode.disconnect(recordingWorklet))
         this.manager.project.env.sampleManager.remove(recordingWorklet.uuid)
         recordingWorklet.terminate()

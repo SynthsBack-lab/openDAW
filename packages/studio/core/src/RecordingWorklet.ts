@@ -4,7 +4,7 @@ import {
     Observer,
     Option,
     panic,
-    Procedure,
+    Exec,
     Subscription,
     Terminable,
     Terminator,
@@ -12,17 +12,21 @@ import {
 } from "@opendaw/lib-std"
 import {AudioData} from "@opendaw/lib-dsp"
 import {Peaks} from "@opendaw/lib-fusion"
-import {mergeChunkPlanes, RingBuffer, SampleLoader, SampleLoaderState, SampleMetaData} from "@opendaw/studio-adapters"
+import {Communicator, Messenger} from "@opendaw/lib-runtime"
+import {
+    mergeChunkPlanes,
+    RecordingProcessorChannel,
+    RecordingProcessorToClient,
+    RingBuffer,
+    SampleLoader,
+    SampleLoaderState,
+    SampleMetaData
+} from "@opendaw/studio-adapters"
 import {RenderQuantum} from "./RenderQuantum"
 import {PeaksWriter} from "./PeaksWriter"
 import {SampleService} from "./samples"
 
-/**
- * The first `numFrames` frames of the recorded chunks, as one plane per channel. The ring delivers
- * whole chunks, so the recording can run past the frame count the takes reference: the HEAD is kept
- * (regions address the buffer from frame 0 through `waveformOffset`) and the overshoot is dropped
- * at the tail. `numFrames` must not exceed the frames the chunks hold.
- */
+// the ring delivers whole chunks, so the capture overshoots the limit: keep the head, drop the tail
 export const recordedFrames = (chunks: ReadonlyArray<ReadonlyArray<Float32Array>>,
                                numFrames: int): ReadonlyArray<Float32Array> =>
     mergeChunkPlanes(chunks.slice(0, Math.ceil(numFrames / RenderQuantum)), RenderQuantum, numFrames)
@@ -30,7 +34,7 @@ export const recordedFrames = (chunks: ReadonlyArray<ReadonlyArray<Float32Array>
 export class RecordingWorklet extends AudioWorkletNode implements Terminable, SampleLoader {
     readonly #terminator: Terminator = new Terminator()
 
-    readonly uuid: UUID.Bytes = UUID.generate()
+    readonly uuid: UUID.Bytes
 
     readonly #output: Array<ReadonlyArray<Float32Array>>
     readonly #notifier: Notifier<SampleLoaderState>
@@ -43,11 +47,11 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
     #isRecording: boolean = true
     #limitSamples: int = Number.POSITIVE_INFINITY
     #state: SampleLoaderState = {type: "record"}
-    #onSaved: Option<Procedure<UUID.Bytes>> = Option.None
+    #onSaved: Option<Exec> = Option.None
     #sampleService: Option<SampleService> = Option.None
     #bpm: Option<number> = Option.None
 
-    constructor(context: BaseAudioContext, config: RingBuffer.Config) {
+    constructor(context: BaseAudioContext, uuid: UUID.Bytes, config: RingBuffer.Config) {
         super(context, "recording-processor", {
             numberOfInputs: 1,
             channelCount: config.numberOfChannels,
@@ -55,14 +59,13 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
             processorOptions: config
         })
 
+        this.uuid = uuid
         this.#peakWriter = new PeaksWriter(config.numberOfChannels)
         this.#peaks = Option.wrap(this.#peakWriter)
-        this.port.addEventListener("message", ({data}: MessageEvent) => {
-            if (data?.type === "first-quantum" && typeof data.contextTime === "number") {
-                this.#firstQuantumTime = Option.wrap(data.contextTime)
-            }
-        })
-        this.port.start()
+        this.#terminator.own(Communicator.executor<RecordingProcessorToClient>(
+            Messenger.for(this.port).channel(RecordingProcessorChannel), {
+                firstQuantum: (contextTime: number): void => {this.#firstQuantumTime = Option.wrap(contextTime)}
+            }))
         this.#output = []
         this.#notifier = new Notifier<SampleLoaderState>()
         this.#reader = RingBuffer.reader(config, array => {
@@ -79,25 +82,20 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
     own<T extends Terminable>(terminable: T): T {return this.#terminator.own(terminable)}
 
     limit(count: int): void {
+        if (!this.#isRecording) {return}
         this.#limitSamples = count
         if (this.numberOfFrames >= this.#limitSamples) {
             void this.#finalize()
         }
     }
 
-    set onSaved(callback: Procedure<UUID.Bytes>) {this.#onSaved = Option.wrap(callback)}
+    set onSaved(callback: Exec) {this.#onSaved = Option.wrap(callback)}
     set bpm(value: number) {this.#bpm = Option.wrap(value)}
     set sampleService(service: SampleService) {this.#sampleService = Option.wrap(service)}
 
     setFillLength(value: int): void {this.#peakWriter.numFrames = value}
 
     get numberOfFrames(): int {return this.#output.length * RenderQuantum}
-    /**
-     * Context time of the buffer's first frame, reported by the processor from the audio thread.
-     * Empty until the announcement arrives over the port. Frame `(t - firstQuantumTime) * sampleRate`
-     * of the buffer was captured at context time `t`; `numberOfFrames` cannot say that, because it
-     * counts chunks as the ring reader delivers them.
-     */
     get firstQuantumTime(): Option<number> {return this.#firstQuantumTime}
     // A take in progress is not a stored sample yet, so it has no metadata to report. It acquires some when
     // `#save` hands it to `SampleService.importRecording`, and from then on a `DefaultSampleLoader` serves it.
@@ -133,10 +131,10 @@ export class RecordingWorklet extends AudioWorkletNode implements Terminable, Sa
         const audioData = AudioData.create(this.context.sampleRate, totalSamples, this.channelCount)
         mergedFrames.forEach((frame, index) => audioData.frames[index].set(frame))
         this.#data = Option.wrap(audioData)
-        const sample = await this.#sampleService
+        await this.#sampleService
             .unwrap("SampleService not set")
-            .importRecording(audioData, this.#bpm.unwrapOrElse(120))
-        this.#onSaved.ifSome(callback => callback(UUID.parse(sample.uuid)))
+            .importRecording(this.uuid, audioData, this.#bpm.unwrapOrElse(120))
+        this.#onSaved.ifSome(callback => callback())
         this.#setState({type: "loaded"})
         this.terminate()
     }
