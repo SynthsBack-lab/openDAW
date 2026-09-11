@@ -3,7 +3,7 @@
   "version": "0.0.95",
   "private": true,
   "sideEffects": false,
-  "license": "LGPL-3.0-or-later",
+  "license": "AGPL-3.0-or-later",
   "exports": {
     ".": "./src/index.ts"
   },
