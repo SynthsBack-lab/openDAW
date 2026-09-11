@@ -1,5 +1,5 @@
 import {describe, expect, it, beforeEach} from "vitest"
-import {isDefined, isInstanceOf, Option, UUID} from "@opendaw/lib-std"
+import {isDefined, isInstanceOf, Option, Terminable, UUID} from "@opendaw/lib-std"
 import {Address, Box, BoxEditing, BoxGraph, Field, PointerField, type Vertex} from "@opendaw/lib-box"
 import {
     ApparatDeviceBox,
@@ -26,7 +26,8 @@ import {
     WerkstattSampleBox
 } from "@opendaw/studio-boxes"
 import {AudioUnitType, Pointers} from "@opendaw/studio-enums"
-import {DeviceBoxUtils, isModulatorBox, ProjectSkeleton, TrackType} from "@opendaw/studio-adapters"
+import {DeviceBoxUtils, Devices, InstrumentFactories, isModulatorBox, ProjectSkeleton, TrackType} from "@opendaw/studio-adapters"
+import type {ProjectEnv} from "../../../project/ProjectEnv"
 import {AudioEffectCompositeBox, AudioEffectCompositeCellBox, StereoToolDeviceBox, UserInterfaceBox} from "@opendaw/studio-boxes"
 import {ClipboardUtils} from "../ClipboardUtils"
 import {DevicesClipboard} from "./DevicesClipboardHandler"
@@ -628,6 +629,58 @@ describe("DevicesClipboardHandler", () => {
             }).not.toThrow()
             expect(target.boxGraph.boxes().some(box => isInstanceOf(box, NoteEventBox))).toBe(false)
             expect(target.boxGraph.boxes().some(box => isInstanceOf(box, NoteEventCollectionBox))).toBe(false)
+        })
+    })
+
+    // #1119: the device selection is global and outlived a switch of the edited unit ("Duplicate AudioUnit"
+    // edits the copy). A paste into the new unit then took the OLD unit's selected instrument as the one to
+    // replace: it deleted that one and added the pasted instrument next to the host's own, two pointers on the
+    // exclusive `input` field.
+    describe("paste with a stale device selection (#1119)", () => {
+        const fakeEnv = (): ProjectEnv => ({
+            audioContext: {
+                currentTime: 0, sampleRate: 48000,
+                createGain: () => ({connect: () => {}, disconnect: () => {}, gain: {value: 1}}),
+                createStereoPanner: () => ({connect: () => {}, disconnect: () => {}, pan: {value: 0}})
+            },
+            audioWorklets: undefined,
+            sampleManager: {
+                getOrCreate: (uuid: UUID.Bytes) => ({
+                    get data() {return Option.None}, get peaks() {return Option.None}, get uuid() {return uuid},
+                    get state() {return {type: "idle"} as const}, invalidate() {}, subscribe: () => Terminable.Empty
+                }), record: () => {}, invalidate: () => {}, remove: () => {}, register: () => Terminable.Empty
+            },
+            soundfontManager: undefined, sampleService: undefined, soundfontService: undefined
+        }) as unknown as ProjectEnv
+        it("leaves the host's instrument alone when the selected instrument belongs to another unit", async () => {
+            if (!isDefined(Reflect.get(globalThis, "AudioWorkletNode"))) {
+                Reflect.set(globalThis, "AudioWorkletNode", class {})
+            }
+            const {Project} = await import("../../../project/Project")
+            const skeleton = ProjectSkeleton.empty({createDefaultUser: true, createOutputMaximizer: false})
+            const project = Project.fromSkeleton(fakeEnv(), skeleton)
+            const [unitA, unitB] = project.editing.modify(() => [
+                project.api.createInstrument(InstrumentFactories.Tape, {name: "A"}),
+                project.api.createInstrument(InstrumentFactories.Tape, {name: "B"})
+            ], false).unwrap("units")
+            const tapeA = unitA.instrumentBox
+            const tapeB = unitB.instrumentBox
+            const hostB = project.boxAdapters.adapterFor(unitB.audioUnitBox, Devices.isHost)
+            project.deviceSelection.select(project.boxAdapters.adapterFor(tapeA, Devices.isInstrument))
+            const handler = DevicesClipboard.createHandler({
+                getEnabled: () => true,
+                editing: project.editing,
+                selection: project.deviceSelection,
+                boxGraph: project.boxGraph,
+                boxAdapters: project.boxAdapters,
+                getHost: () => Option.wrap(hostB)
+            })
+            const entry = handler.copy().unwrap("copy")
+            expect(() => handler.paste(entry)).not.toThrow()
+            expect(unitB.audioUnitBox.input.pointerHub.incoming().length).toBe(1)
+            expect(tapeB.isAttached()).toBe(true)
+            expect(tapeA.isAttached()).toBe(true)
+            project.terminate()
         })
     })
 

@@ -312,7 +312,9 @@ export namespace DevicesClipboard {
                 const host = optHost.unwrap()
                 const metadata = decodeMetadata(ClipboardUtils.extractMetadata(entry.data))
                 const selected = selection.selected()
-                const selectedInstrument = selected.find(adapter => adapter.type === "instrument")
+                // the selection outlives a switch of the edited unit, so only the host's own instrument is replaceable
+                const selectedInstrument = selected.find(adapter => adapter.type === "instrument"
+                    && adapter.deviceHost().inputField.address.equals(host.inputField.address))
                 const selectedMidiEffects = selected.filter(adapter => adapter.type === "midi-effect") as MidiEffectDeviceAdapter[]
                 const selectedAudioEffects = selected.filter(adapter => adapter.type === "audio-effect") as AudioEffectDeviceAdapter[]
                 let replaceInstrument = metadata.hasInstrument && isDefined(selectedInstrument)
