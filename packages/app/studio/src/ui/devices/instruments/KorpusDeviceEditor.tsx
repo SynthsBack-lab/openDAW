@@ -10,6 +10,7 @@ import {Html} from "@opendaw/lib-dom"
 import {StudioService} from "@/service/StudioService"
 import {Colors, IconSymbol} from "@opendaw/studio-enums"
 import {MenuItem} from "@opendaw/studio-core"
+import {MenuButton} from "@/ui/components/MenuButton"
 
 const className = Html.adoptStyleSheet(css, "KorpusDeviceEditor")
 
@@ -32,6 +33,22 @@ export const KorpusDeviceEditor = ({lifecycle, service, adapter, deviceHost}: Co
     const box = adapter.box
     const knob = (parameter: AutomatableParameterFieldAdapter, label?: string) =>
         ControlBuilder.createKnob({lifecycle, editing, midiLearning, adapter, parameter, color: Colors.black, label})
+    const presetName: HTMLElement = <span className="preset-name">Custom</span>
+    const matchIndex = () => KorpusPresets.Factory.findIndex(preset => KorpusPresets.matches(box, preset))
+    const refreshPreset = () => {
+        const index = matchIndex()
+        presetName.textContent = index >= 0 ? KorpusPresets.Factory[index].name : "Custom"
+    }
+    const loadPreset = (index: number) => editing.modify(() =>
+        KorpusPresets.apply(box, KorpusPresets.Factory[index]))
+    const stepPreset = (direction: number) => {
+        const count = KorpusPresets.Factory.length
+        const index = matchIndex()
+        loadPreset(index === -1 ? (direction > 0 ? 0 : count - 1) : (index + direction + count) % count)
+    }
+    const parameters = [exciter, intensity, position, vibrato, objectA, dampingA, tuneA, widthA,
+        objectB, dampingB, tuneB, detuneB, widthB, levelB, routing, couple, volume]
+    parameters.forEach(parameter => lifecycle.own(parameter.catchupAndSubscribe(refreshPreset)))
     const objectBKnobs: HTMLElement = (
         <div className="knobs">
             {knob(objectB, "Object")}
@@ -58,6 +75,19 @@ export const KorpusDeviceEditor = ({lifecycle, service, adapter, deviceHost}: Co
                       }}
                       populateControls={() => (
                           <div className={className}>
+                              <div className="presets">
+                                  <span className="step" onclick={() => stepPreset(-1)}>&#9666;</span>
+                                  <MenuButton root={MenuItem.root()
+                                      .setRuntimeChildrenProcedure(parent => parent.addMenuItem(
+                                          ...KorpusPresets.Factory.map((preset, index) =>
+                                              MenuItem.default({label: preset.name,
+                                                  checked: index === matchIndex()})
+                                                  .setTriggerProcedure(() => loadPreset(index)))))}
+                                              appearance={{tinyTriangle: true}}
+                                              pointer>{presetName}</MenuButton>
+                                  <span className="step" onclick={() => stepPreset(1)}>&#9656;</span>
+                              </div>
+                              <div className="signal">
                               <section className="zone">
                                   <h5>Exciter</h5>
                                   <div className="quad">
@@ -93,6 +123,7 @@ export const KorpusDeviceEditor = ({lifecycle, service, adapter, deviceHost}: Co
                                       {knob(volume)}
                                   </div>
                               </section>
+                              </div>
                           </div>
                       )}
                       populateMeter={() => (

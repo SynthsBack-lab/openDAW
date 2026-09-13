@@ -156,9 +156,11 @@ Standard device recipe (see `manuals/creating-a-device.md`): schema in
 `voicing` pool) → editor (`KorpusDeviceEditor.tsx`, signal-flow layout
 EXCITER › OBJECTS › OUT with a state-aware Object-B row) → factory
 registrations. Factory presets are in-code
-(`adapters/.../KorpusPresets.ts`, applied via the device menu inside one
-`editing.modify` transaction), since the stock preset catalog is hosted
-outside the repository.
+(`adapters/.../KorpusPresets.ts`), since the stock preset catalog is hosted
+outside the repository; they load from an on-panel preset strip (step
+arrows + dropdown, current patch matched field-by-field via
+`KorpusPresets.matches`) and from the device menu, each load one
+`editing.modify` transaction.
 
 Engine-side cautions that are easy to trip:
 

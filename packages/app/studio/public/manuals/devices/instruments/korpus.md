@@ -123,10 +123,12 @@ Output level in dB.
 
 ## 4. Factory Presets
 
-The device menu (⋮ in the device header) carries a **Presets** submenu with ten factory patches
-covering every exciter and routing: _Velvet Gamelan_, _Log & Skin_, _Foundry Kit_, _Twin Nylon_,
-_Rosin & Ivory_, _Glass Chapel_, _Ocarina Moon_, _Cathedral of Wires_, _Seance Drum_ and _Vesper
-Choir_. Loading a preset is a single undoable edit.
+The preset strip at the top of the panel browses ten factory patches covering every exciter and
+routing: step with the ◂ ▸ arrows, or click the name to pick from the full list (the current patch
+is checked). The same list lives in the device menu (⋮ in the device header) under **Presets**:
+_Velvet Gamelan_, _Log & Skin_, _Foundry Kit_, _Twin Nylon_, _Rosin & Ivory_, _Glass Chapel_,
+_Ocarina Moon_, _Cathedral of Wires_, _Seance Drum_ and _Vesper Choir_. Loading a preset is a
+single undoable edit, and the strip reads _Custom_ as soon as any knob leaves the preset.
 
 ---
 

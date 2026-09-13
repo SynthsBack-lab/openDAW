@@ -85,6 +85,25 @@ export namespace KorpusPresets {
             routing: 0, couple: 0.12, volume: -9.0
         }
     ]
+    const near = (a: number, b: number): boolean => Math.abs(a - b) < 1.0e-3
+    export const matches = (box: KorpusDeviceBox, preset: Preset): boolean =>
+        box.exciter.getValue() === preset.exciter
+        && near(box.intensity.getValue(), preset.intensity)
+        && near(box.position.getValue(), preset.position)
+        && near(box.vibrato.getValue(), preset.vibrato)
+        && box.objectA.getValue() === preset.objectA
+        && near(box.dampingA.getValue(), preset.dampingA)
+        && box.tuneA.getValue() === preset.tuneA
+        && near(box.widthA.getValue(), preset.widthA)
+        && box.objectB.getValue() === preset.objectB
+        && near(box.dampingB.getValue(), preset.dampingB)
+        && box.tuneB.getValue() === preset.tuneB
+        && near(box.detuneB.getValue(), preset.detuneB)
+        && near(box.widthB.getValue(), preset.widthB)
+        && near(box.levelB.getValue(), preset.levelB)
+        && box.routing.getValue() === preset.routing
+        && near(box.couple.getValue(), preset.couple)
+        && near(box.volume.getValue(), preset.volume)
     export const apply = (box: KorpusDeviceBox, preset: Preset): void => {
         box.exciter.setValue(preset.exciter)
         box.intensity.setValue(preset.intensity)
