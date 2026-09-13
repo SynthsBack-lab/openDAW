@@ -13,6 +13,8 @@ through openDAW's Rust→WASM engine (per `manuals/creating-a-device.md`). The
 user-facing manual lives at
 `packages/app/studio/public/manuals/devices/instruments/korpus.md`.
 
+![The Korpus device editor](korpus-device.png)
+
 ## Architecture
 
 ```

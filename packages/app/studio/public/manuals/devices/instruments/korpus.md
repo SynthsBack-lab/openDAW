@@ -6,6 +6,10 @@ sympathetically, or chained in series. All sound is computed from physics — no
 
 ---
 
+![screenshot](korpus.webp)
+
+---
+
 ## 0. Overview
 
 _Korpus_ follows the signal flow of a real acoustic instrument, and the panel reads the same way:
